@@ -1,6 +1,6 @@
 from collections import namedtuple
-from datetime import datetime, timedelta
-from sklearn.model_selection import train_test_split
+from datetime import datetime
+from sklearn.linear_model import LinearRegression, LogisticRegression
 
 import json
 import pandas as pd
@@ -12,13 +12,14 @@ url = 'http://eventregistry.org/api/v1/article/getArticles'
 with open('newsapikey.txt') as keyfile:
     api_key = keyfile.read()
 
-def get_data():
+def retrieve_data():
     with open('newsapikey.txt') as keyfile:
         api_key = keyfile.read()
 
     start_date = '2024-01-01'
     end_date = '2024-02-15'
 
+    #Parameters for API key
     query_term = "wheat price"
     params = {
         "action": "getArticles",
@@ -45,31 +46,40 @@ def get_data():
     response = requests.get(url = url, params = params)
     print(response)
     results = response.json()
-    print(results['articles']['totalResults'])
+    print("Retrieved ", results['articles']['totalResults'], " results")
 
-    with open("articles.json", "w") as outfile:
-        json.dump(results, outfile)
 
-def build_model():
-    with open('articles.json') as f:
-        data = json.load(f)
-    Article = namedtuple('article',['day','sentiment'])
-    articles = tuple(Article(datetime.strptime(art['date'], '%Y-%m-%d'),art['sentiment']) for art in data['articles']['results'])
+    with open("sentiments_articles.pkl", "wb") as outfile:
+        articles = pd.DataFrame({ 'day': datetime.strptime(art['date'], '%Y-%m-%d'), 
+                                 'sentiment': art['sentiment'],
+                                 'link' : art['url']}
+                                 for art in results['articles']['results'])
+        articles.to_pickle("sentiments_articles.pkl")
 
-    sentiments = pd.DataFrame(data=articles).groupby('day').mean().reset_index()
+def prepare_data():
+    #Get the sentiment of the articles
+    articles = pd.read_pickle("sentiments_articles.pkl").drop(['link'],axis=1)
+
+    #Find the average sentiment per day
+    sentiments = articles.groupby('day').mean().reset_index()
     
+    #Get Wheat Prices
     with open('data/HistoricalWheatPrices.csv') as csvfile:
         wp = pd.read_csv(csvfile)
         wp['Date'] = pd.to_datetime(wp['Date'])
        
-    wp = wp[wp['Date'] >= sentiments['day'].min() - timedelta(days=7)]
 
+    #Filter out days with no sentiments
+    wp = wp[wp['Date'] >= sentiments['day'].min()]
+   
+    #Add the percentage change to the next day
     change = wp['Price'].pct_change()
     change.index -= 1
     wp.drop(wp.tail(1).index, inplace=True)
-
     wp['Change'] = change.iloc[1:]
+    wp['Direction'] = wp.apply(lambda r : 'rise' if r.Change >= 0 else 'fall', axis = 1)
 
+    #Add sentiments for the previous 7 days
     for x in range(1,8):
         nc = f'day_m{x}'
         wp[nc] = 0.0
@@ -81,9 +91,29 @@ def build_model():
     return wp
                 
 def train_model(df):
+    #Train model
     feature_cols = [f'day_m{x}' for x in range(1,8)]
     X = df[feature_cols]
-    y = df.Change
-        
+    yi = df.Change
+    yo = df.Direction
 
-train_model(build_model())
+    linreg = LinearRegression()
+    linreg.fit(X, yi)
+    logreg = LogisticRegression(random_state=29) # Set random_state for reproducibility
+    logreg.fit(X, yo)
+
+    sd = (0,0,.074510,0,0,-0.388235,-0.100654)
+
+    tyer = pd.DataFrame(data = {f'day_m{i+1}': [s] for i, s in enumerate(sd) })
+    # print(tyer)
+    for n in range(X.shape[0]):
+        m = X.iloc[n:n+1]
+        # print(m)
+        # print(yi.iloc[n])
+        # print('\t',linreg.predict(m))
+        # print('\t',logreg.predict(m))
+
+    #print(linreg.print)
+        
+# retrieve_data()
+train_model(prepare_data())
