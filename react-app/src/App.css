@@ -29,6 +29,11 @@
   color: #61dafb;
 }
 
+.Prediction-band {
+  max-width: 600px;
+  -webkit-text-stroke-width: 1px;
+  -webkit-text-stroke-color: rgb(114, 113, 126);
+}
 
 @keyframes App-logo-spin {
   from {

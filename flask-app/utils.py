@@ -45,16 +45,16 @@ def retrieve_data():
     print("Retrieved ", results['articles']['totalResults'], " results")
 
     #Unpack articles into a dataframe
-    with open("sentiments_articles.pkl", "wb") as outfile:
-        new_articles = pd.DataFrame({ 'day': datetime.strptime(art['date'], '%Y-%m-%d'), 
-                                 'sentiment': art['sentiment'],
-                                 'link' : art['url']}
-                                 for art in results['articles']['results'])
-        
-        old_articles = pd.read_pickle('../data/sentiments_articles.pkl')
-        articles = pd.concat([new_articles,old_articles]).drop_duplicates().reset_index(drop=True)
-        print("Model has ", articles.shape[0], " articles total")
-        articles.to_pickle('../data/sentiments_articles.pkl')
+    new_articles = pd.DataFrame({ 'day': datetime.strptime(art['date'], '%Y-%m-%d'), 
+                                'sentiment': art['sentiment'],
+                                'link' : art['url']}
+                                for art in results['articles']['results'])
+    
+    #Combine new articles with old articles and save
+    old_articles = pd.read_pickle('../data/sentiments_articles.pkl')
+    articles = pd.concat([new_articles,old_articles]).drop_duplicates().reset_index(drop=True)
+    print("Model has ", articles.shape[0], " articles total")
+    articles.to_pickle('../data/sentiments_articles.pkl')
 
 def prepare_sentiment_data():
     #Get the sentiment of the articles
@@ -131,13 +131,11 @@ def get_prediction(reg_model, sentiments, day):
             pred_x.loc[0, nc] = res.iloc[0, res.columns.get_loc('sentiment')]
     pred_x = pred_x.drop(['day'], axis=1)
     prediction = reg_model.predict(pred_x)
-    return(prediction)
+    return prediction[0]
 
-    
-        
-# retrieve_data()
-#train_model(prepate_price_data(prepare_sentiment_data()))
-    
-sents = prepare_sentiment_data()
-tm = train_model(prepate_price_data(sents))
-get_prediction(tm, sents, datetime(2023,2,22))
+def make_prediction(day):
+    sents = prepare_sentiment_data()
+    tm = train_model(prepate_price_data(sents))
+    return get_prediction(tm, sents, day)
+
+make_prediction(pd.to_datetime('today').normalize())
